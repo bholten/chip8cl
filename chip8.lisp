@@ -1,8 +1,5 @@
 (in-package #:chip8cl)
 
-;; dev mode
-(declaim (optimize (debug 3)))
-
 ;;
 ;; Most references from:
 ;; evernay.free.fr/hacks/chip8/C8TECH10.HTM
@@ -208,12 +205,12 @@
    (delay-timer
     :initarg :delay-timer
     :accessor cpu-delay-timer
-    :initform #x0000
+    :initform #x00
     :type (unsigned-byte 8))
    (sound-timer
     :initarg :sound-timer
     :accessor cpu-sound-timer
-    :initform #x0000
+    :initform #x00
     :type (unsigned-byte 8))))
 
 (defun key-pressed? (keyboard-buffer keycode)
@@ -278,12 +275,17 @@
 ;;   ((aa :initarg :aa :reader foo-aa) (bb :initarg :bb :reader foo-bb)))
 ;;
 (defmacro definstruction (name &rest fields)
-  `(defclass ,name (instruction)
-     ,(loop :for field :in fields
-	    :collect `(,field :initarg ,(intern (symbol-name field) "KEYWORD")
-			      :reader ,(intern (concatenate 'string (symbol-name name) "-" (symbol-name field)))))))
-
-(definstruction foo aa bb)
+  `(progn
+     (defclass ,name (instruction)
+       ,(loop :for field :in fields
+	      :collect `(,field :initarg ,(intern (symbol-name field) "KEYWORD")
+				:reader ,(intern (concatenate 'string (symbol-name name) "-" (symbol-name field))))))
+     (defmethod print-object ((obj ,name) out)
+       (print-unreadable-object (obj out :type t :identity t)
+	 (dolist (slot ',fields)
+	   (format out "~A: ~A "
+		   (string slot)
+		   (slot-value obj slot)))))))
 
 ;; 0nnn - SYS addr
 ;;
@@ -411,7 +413,7 @@
 (defmethod execute-instruction ((cpu cpu) (ld-vx-nn ld-vx-nn))
   (with-slots (registers) cpu
     (with-slots (x nn) ld-vx-nn
-      (setf (aref registers x) (mod nn #xFF))
+      (setf (aref registers x) nn) ; TODO mod necessary?
       *next*)))
 
 ;; 7xkk - ADD Vx, byte
@@ -579,7 +581,7 @@
 ;;
 ;; If the most-significant bit of Vx is 1, then VF is set to 1, otherwise
 ;; to 0. Then Vx is multiplied by 2.
-(definstruction shl-vx-vf x y) ;; TODO wut?
+(definstruction shl-vx-vf x y)
 
 ;; TODO lots of conflicting information on this one
 ;; https://chip8.gulrak.net/reference/opcodes/#quirk5
@@ -588,13 +590,10 @@
 (defmethod execute-instruction ((cpu cpu) (shl-vx-vf shl-vx-vf))
   (with-slots (registers) cpu
     (with-slots (x y) shl-vx-vf
-      (let* ((vx (aref registers x))
-	     (vy (aref registers y))
-	     (vvx (ash vx -1))
-	     (vvy (ash vy -1))
+      (let* ((vy (aref registers y))
+	     (vvy (ash vy 1))
 	     (msb (logand vy #b10000000)))
-	(setf (aref registers x) vvx)
-	(setf (aref registers y) vvy)
+	(setf (aref registers x) (mod vvy #xFF))
 	(setf (aref registers #x0F) (if (zerop msb) 0 1))
 	*next*))))
 
@@ -683,7 +682,7 @@
 	      :do (let ((sprite (aref memory (+ a i)))
 			(dy (mod (+ a vy) 32)))
 		    (loop :for b :from 0 :below 8
-			  :do (let* ((bmsb (ash #b10000000 (* -1 b)))
+			  :do (let* ((bmsb (ash #b10000000 (- 0 b)))
 				     (s (logand sprite bmsb)))
 				(when (not (zerop s))
 				  (let* ((dx (mod (+ b vx) 64))
@@ -873,11 +872,11 @@
     (#x00E0 (make-instance 'cls))
     (#x00EE (make-instance 'ret))
     (otherwise
-     (let ((d (logand opcode #xF000))
-	   (n (logand opcode #x000F))
-	   (x (ash (logand opcode #x0F00) -8))
-	   (y (ash (logand opcode #x00F0) -4))
-	   (nn (logand opcode #x00FF))
+     (let ((d   (logand opcode #xF000))
+	   (n   (logand opcode #x000F))
+	   (x   (ash (logand opcode #x0F00) -8))
+	   (y   (ash (logand opcode #x00F0) -4))
+	   (nn  (logand opcode #x00FF))
 	   (nnn (logand opcode #x0FFF)))
        (case d
 	 (#x1000 (make-instance 'jp-addr :nnn nnn))
@@ -935,45 +934,3 @@
       (next-cycle cpu n)
       (when (> delay-timer 0) (decf delay-timer))
       (when (> sound-timer 0) (decf sound-timer)))))
-
-(defun draw (ren cpu)
-  (sdl2:set-render-draw-color ren 50 50 50 0)
-  (sdl2:render-clear ren)
-  (sdl2:set-render-draw-color ren 0 255 255 0)
-  (with-slots (display-buffer) cpu
-    (destructuring-bind (x y) (array-dimensions display-buffer)
-      (loop :for i :below x
-	    :do (loop :for j :below y
-		      :for elem = (aref display-buffer i j)
-		      ::when elem
-		      :do (sdl2:render-fill-rect ren (sdl2:make-rect (* i 10) (* j 10) 10 10)))))
-    (sdl2:render-present ren)))
-
-(defun make-window (cpu)
-  (sdl2:with-init (:everything)
-    (sdl2:with-window (win :title "CHIP-8" :w 640 :h 320)
-      (sdl2:with-renderer (ren win)
-	(sdl2:with-event-loop (:method :poll)
-	  (:quit () t)
-	  (:idle ()
-		 (livesupport:update-repl-link)
-		 (update)
-		 (draw ren cpu)
-		 (sdl2:delay 32)))))))
-
-;; Test things
-
-(defparameter *test-chip8*
-  (let ((c (make-instance 'cpu)))
-    (with-slots (memory) c
-      (load-rom  "/home/bjh/dev/chip8ml/roms/4-flags.ch8" c)
-      c)))
-
-(defun update ()
-  )
-
-(defun test ()
-  (livesupport:setup-lisp-repl)
-  (bordeaux-threads:make-thread (lambda ()
-				  (make-window *test-chip8*)) :name "main-thread"))
-

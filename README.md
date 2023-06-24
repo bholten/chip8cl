@@ -13,7 +13,7 @@ project to learn a programming language. It's a single project that is
 challenging enough that it can propel you to
 high-beginner/low-intermediate level in language in one step.
 
-- Upcomming blog post about OCaml vs Common Lisp vs C vs Zig :D
+- Upcomming blog post about OCaml vs Common Lisp vs C vs Zig
 - I wanted to re-learn CL (and OCaml)
 - I wanted to explore Zig
 - I already understand how to implement a CHIP-8 because I did it in C

@@ -9,4 +9,9 @@
   :depends-on ("livesupport"
 	       "sdl2")
   :components ((:file "package")
-               (:file "chip8cl")))
+               (:file "chip8")
+	       (:file "cli")
+	       (:file "ui"))
+  :build-operation "program-op" ;; leave as is
+  :build-pathname "chip8cl"
+  :entry-point "chip8cl:main")
