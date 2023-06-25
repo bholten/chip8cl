@@ -216,6 +216,29 @@
 (defun key-pressed? (keyboard-buffer keycode)
   (aref keyboard-buffer keycode))
 
+(defun sdl-scancode->chip8-key! (cpu scancode)
+  (with-slots (keyboard-buffer) cpu
+    (let ((key (cond
+		 ((sdl2:scancode= scancode :scancode-1) #x1)
+		 ((sdl2:scancode= scancode :scancode-2) #x2)
+		 ((sdl2:scancode= scancode :scancode-3) #x3)
+		 ((sdl2:scancode= scancode :scancode-4) #xC)
+		 ((sdl2:scancode= scancode :scancode-q) #x4)
+		 ((sdl2:scancode= scancode :scancode-w) #x5)
+		 ((sdl2:scancode= scancode :scancode-e) #x6)
+		 ((sdl2:scancode= scancode :scancode-r) #xD)
+		 ((sdl2:scancode= scancode :scancode-a) #x7)
+		 ((sdl2:scancode= scancode :scancode-s) #x8)
+		 ((sdl2:scancode= scancode :scancode-d) #x9)
+		 ((sdl2:scancode= scancode :scancode-f) #xE)
+		 ((sdl2:scancode= scancode :scancode-z) #xA)
+		 ((sdl2:scancode= scancode :scancode-x) #x0)
+		 ((sdl2:scancode= scancode :scancode-c) #xB)
+		 ((sdl2:scancode= scancode :scancode-v) #xF)
+		 (t nil))))
+      (when key
+	(setf (aref keyboard-buffer key) (not (aref keyboard-buffer key)))))))
+
 (defun add-u8 (n m)
   (mod (+ n m) 256))
 
@@ -227,10 +250,10 @@
     (with-open-file (stream file
 			    :direction :input
 			    :element-type '(unsigned-byte 8))
-      (loop :for i :from #x200
-	    :for byte = (read-byte stream nil nil)
-	    :while byte
-	    :do (setf (aref memory i) byte)))))
+		    (loop :for i :from #x200
+			  :for byte = (read-byte stream nil nil)
+			  :while byte
+			  :do (setf (aref memory i) byte)))))
 
 (defclass cycle () ())
 (defclass next (cycle) ())
@@ -273,6 +296,13 @@
 ;;
 ;; (defclass foo (instruction)
 ;;   ((aa :initarg :aa :reader foo-aa) (bb :initarg :bb :reader foo-bb)))
+;;
+;; It also generates a print-object method:
+;; 
+;; (defmethod print-object ((obj foo) out)
+;;   (print-unreadable-object (obj out :type t :identity t)
+;;     (dolist (slot '(aa bb))
+;;       (format out "~A: ~A " (string slot) (slot-value obj slot))))))
 ;;
 (defmacro definstruction (name &rest fields)
   `(progn
@@ -745,7 +775,15 @@
 (definstruction ld-vx-k x)
 
 (defmethod execute-instruction ((cpu cpu) (opcode ld-vx-k))
-  *next*) ;; TODO
+  (with-slots (keyboard-buffer registers pc) cpu
+    (with-slots (x) opcode
+      (let ((result (loop :for i :from 0
+			  :and k :across keyboard-buffer
+			  :when k
+			  :do (return (setf (aref registers x) i)))))
+	(if result ; the loop returns nil if it terminates without the return hitting
+	    *next*
+	    (make-instance 'jump :nnn pc))))))
 
 ;; Fx15 - LD DT, Vx
 ;;
