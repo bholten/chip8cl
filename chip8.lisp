@@ -302,7 +302,7 @@
 ;; (defmethod print-object ((obj foo) out)
 ;;   (print-unreadable-object (obj out :type t :identity t)
 ;;     (dolist (slot '(aa bb))
-;;       (format out "~A: ~A " (string slot) (slot-value obj slot))))))
+;;       (format out "~A: ~X " (string slot) (slot-value obj slot))))))
 ;;
 (defmacro definstruction (name &rest fields)
   `(progn
@@ -313,7 +313,7 @@
      (defmethod print-object ((obj ,name) out)
        (print-unreadable-object (obj out :type t :identity t)
 	 (dolist (slot ',fields)
-	   (format out "~A: ~A "
+	   (format out "~A: ~X "
 		   (string slot)
 		   (slot-value obj slot)))))))
 
